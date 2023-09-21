@@ -1,16 +1,25 @@
+require('dotenv').config();
 const express = require('express')
+const cors = require('cors')
+const cookieParser = require('cookie-parser')
 const mongoose = require('mongoose')
 const authRouter = require('./authRouter')
-const PORT = process.env.PORT || 3000
+const router = require('./router/index')
 
+const PORT = process.env.PORT || 4000
 const app = express()
 
-app.use(express.json())
-app.use("/auth", authRouter)
+app.use(express.json());
+app.use(cookieParser());
+app.use(cors());
+app.use("/api", router)
 
 const start = async () => {
     try {
-        await mongoose.connect("mongodb+srv://searcher865:testsearcher@cluster0.yd8ebgf.mongodb.net/?retryWrites=true&w=majority")
+        await mongoose.connect(process.env.DB_URL, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true
+        })
         app.listen(PORT, () => console.log(`server started on port ${PORT}`))
     } catch (e) {
         console.log(e)
