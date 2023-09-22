@@ -21,7 +21,6 @@ class Usercontroller {
     async login(req, res, next) {
         try {
             const {email, password} = req.body;
-            console.log("ПЕРЕД ЮЗЕР ДАТОЙ " + JSON.stringify(req.body));
             const userData = await userService.login(email, password)
             res.cookie('refreshToken', userData.refreshToken, {maxAge: 30*24*60*60*1000, httpOnly: true})
             res.json(userData)
@@ -55,7 +54,10 @@ class Usercontroller {
 
     async refresh(req, res, next) {
         try {
-
+            const {refreshToken} = req.cookies;
+            const userData = await userService.refresh(email, password)
+            res.cookie('refreshToken', userData.refreshToken, {maxAge: 30*24*60*60*1000, httpOnly: true})
+            res.json(userData)
         } catch (e) {
             next(e)
         }
@@ -63,8 +65,8 @@ class Usercontroller {
 
     async getUsers(req, res, next) {
         try {
-            res.json(['123', '1234'])
-
+            const users = await userService.getAllUsers()
+            res.json(users)
         } catch (e) {
             next(e)
         }

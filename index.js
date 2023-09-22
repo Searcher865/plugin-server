@@ -5,7 +5,7 @@ const cookieParser = require('cookie-parser')
 const mongoose = require('mongoose')
 const authRouter = require('./authRouter')
 const router = require('./router/index')
-const errorMiddleware = require("./middlewaree/error-middleware")
+const errorMiddleware = require("./middlewares/error-middleware")
 
 const PORT = process.env.PORT || 4000
 const app = express()

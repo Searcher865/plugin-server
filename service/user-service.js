@@ -15,7 +15,6 @@ class UserService {
         const hashPassword = await bcrypt.hash(password, 3)
         const activationLink = uuid.v4()
         const fullActivationLink = `${process.env.API_URL}/api/activate/${activationLink}`
-        console.log("ПЕРЕД СОЗДАНИЕ ПОЛЬЗОВАТЕЛЯ  " +activationLink)
         const user = await UserModel.create({email, password: hashPassword, activationLink})
         
         // await mailService.sendActivationMail(email, `${process.env.API_URL}/api/activate/${activationLink}`); //здесь отправка письма через email
@@ -27,9 +26,7 @@ class UserService {
     }
 
     async activate(activationLink) {
-        console.log("ПЕРЕД ПОИСКОМ В БД " +activationLink) ;
         const user = await UserModel.findOne({activationLink})
-        console.log("ПОСЛЕ ПОИСКА В БД " +user) ;
         if(!user) {
             throw ApiError.BadRequest('Неккоректная ссылка активации')
         }
@@ -50,12 +47,34 @@ class UserService {
         const tokens = tokenService.generateTokens({...userDto});
 
         await tokenService.saveToken(userDto.id, tokens.refreshToken);
-        return {...tokens, user: userDto, fullActivationLink}
+        return {...tokens, user: userDto}
     }
 
     async logout(refreshToken) {
         const token = await tokenService.removeToken(refreshToken);
         return token
+    }
+
+    async refresh(refreshToken) {
+        if (!refreshToken) {
+            throw ApiError.UnauthorizedError()            
+        }
+        const userData = tokenService.validateRefershToken(refreshToken);
+        const tokenFromData = await tokenService.findToken(refreshToken);
+        if (!userData || !tokenFromData) {
+            throw ApiError.UnauthorizedError()
+        }
+        const user = await UserModel.findById(userData.id)
+        const userDto = new UserDto(user)
+        const tokens = tokenService.generateTokens({...userDto});
+
+        await tokenService.saveToken(userDto.id, tokens.refreshToken);
+        return {...tokens, user: userDto, fullActivationLink}
+    }
+
+    async getAllUsers() {
+        const users = await UserModel.find()
+        return users
     }
 }
 
