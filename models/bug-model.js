@@ -7,7 +7,7 @@ const BugSchema = new Schema({
   pathId: { type: mongoose.Schema.Types.ObjectId, required: true },
   xpath: { type: String},
   bugNumber: { type: Number, unique: true },
-  cardNumber: { type: String },
+  taskId: { type: String },
 });
 
 module.exports = model('Bug', BugSchema)
