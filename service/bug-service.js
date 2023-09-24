@@ -4,18 +4,18 @@ const PageModel = require("../models/page-model")
 const axios = require('axios');
 const FormData = require('form-data');
 const ApiError = require('../exceptions/api-error')
+const fs = require('fs');
+
 
 class BugService {
     async createBug(url, xpath, summary, description, environment, fileData) {
         const {domain, path} = await this.getDomainAndPath(url)
         const domainId = await this.getDomainId(domain)
         const pathId = await this.getPageId(path, domainId)
-        console.log("TEST before  createTaskInTracker" + summary+" "+ description+" "+ environment+" "+fileData);
-        const taskId = await this.createTaskInTracker(summary, description, environment, fileData)
-        console.log("TEST createBug " + taskId);
-        await this.attachFilesToTask(taskId, "filename", fileData)
-        const bugNumber = await this.getBugNumber(domainId, pathId, xpath, taskId)
-        return {bugNumber}
+        const task = await this.createTaskInTracker(summary, description, environment, fileData)
+        await this.attachFilesToTask(task.id, "ФР", fileData)
+        const bugNumber = await this.getBugNumber(domainId, pathId, xpath, task.id, task.key, summary, environment)
+        return bugNumber
         
     }
 
@@ -33,7 +33,7 @@ class BugService {
         const domain = parts.shift();
         const path = parts.join('/');
 
-        return {domain, path: path};
+        return {domain, path};
       }
 
     async getDomainId(domain) {
@@ -68,7 +68,7 @@ class BugService {
         }
     }
 
-    async getBugNumber(domainId, pathId, xpath, taskId) {
+    async getBugNumber(domainId, pathId, xpath, taskId, taskKey, summary, environment) {
         try {
             let bugNumber = 1;
             const maxBug = await BugModel.findOne({ domainId }).sort({ bugNumber: -1 });
@@ -77,13 +77,16 @@ class BugService {
             }
             const newBug = new BugModel({
                 domainId,
-                pathId, // Возможно, вам нужно заменить это поле на правильное
+                pathId, 
                 xpath,
                 bugNumber,
-                taskId
+                taskId,
+                taskKey,
+                summary,
+                environment
             });
             await newBug.save()
-            return bugNumber;
+            return {bugNumber, xpath, taskId, taskKey, summary, environment};
 
             } catch (error) {
                 console.error("Ошибка:", error);
@@ -91,7 +94,7 @@ class BugService {
             }
     }
 
-    async createTaskInTracker(summary, description, environment, fileData) {
+    async createTaskInTracker(summary, description, environment) {
         try {
             const requestBody = {
                 "summary": summary,
@@ -114,7 +117,7 @@ class BugService {
                 const responseData = response.data;
                 if (responseData && responseData.id) {
                     console.log('Задача успешно создана. ID задачи:', responseData.id);
-                    return responseData.id;
+                    return {id: responseData.id, key:responseData.key};
                 } else {
                     throw ApiError.BadRequest('Не удалось получить ID задачи из ответа')
                 }
@@ -122,41 +125,70 @@ class BugService {
                 throw ApiError.BadRequest('Ошибка при создании задачи')
             }
         } catch (error) {
-            throw ApiError.BadRequest('Произошла ошибка при отправке запроса:')
+            throw ApiError.BadRequest('Произошла ошибка при отправке запроса на создание задачи')
         }
     }
 
     async attachFilesToTask(taskId, filename, fileData) {
+        const fileDataPath = `./upload/${fileData}`;
+        if (!fs.existsSync(fileDataPath)) {
+            throw ApiError.BadRequest('Файл или директория не найдены')
+        }
+      
+        const formData = new FormData();
+        formData.append('file', fs.createReadStream(fileDataPath), { filename });
+      
+        const headers = {
+          'Authorization': 'Bearer y0_AgAAAAATFq7WAAqB_QAAAADs6FC29yntavQmQn2V4OoFOqiVNthFKVs',
+          'X-Org-ID': '5971090',
+          ...formData.getHeaders(),
+        };
+      
         try {
-            console.log("TEST TEST TEST + " + fileData);
-            const form = new FormData();
-            
-            // Добавляем параметры в форму
-            form.append('filename', filename || 'ФР');
-            form.append('file_data', fileData);
-    
-            // Устанавливаем заголовки
-            form.headers = {
-                'Authorization': 'Bearer y0_AgAAAAATFq7WAAqB_QAAAADs6FC29yntavQmQn2V4OoFOqiVNthFKVs',
-                'X-Org-ID': '5971090',
-                'Content-Type': 'multipart/form-data',
-                ...form.getHeaders(),
-            };
-    
-            // Отправляем POST-запрос
-            const response = await axios.post(`https://api.tracker.yandex.net/v2/issues/${taskId}/attachments/`, form, {
-                headers: form.headers,
-            });
-    
-            if (response.status === 200) {
-                console.log('Файл успешно загружен');
-            } else {
-                throw ApiError.BadRequest('Ошибка при загрузке файла')
-            }
+          const response = await axios.post(`https://api.tracker.yandex.net/v2/issues/${taskId}/attachments/`, formData, {
+            headers,
+          });
+      
+          if (response.status === 201) {
+            fs.unlinkSync(fileDataPath);
+            return console.log("Все хорошо, файл прикреплен и удален");
+          } else {
+            throw ApiError.BadRequest('Ошибка при прикреплении файла')
+          }
         } catch (error) {
-            throw ApiError.BadRequest('Произошла ошибка при отправке файла')
+          throw ApiError.BadRequest('Ошибка при отправке файлов')
         }
     }
+
+    async getBugs(url) {
+        const { domain, path } = await this.getDomainAndPath(url);
+        const findDomain = await DomainModel.findOne({ name: domain }).exec();
+        if (!findDomain) {
+          return null
+        }
+        const domainId = findDomain._id;
+        const pages = await PageModel.find({ domainId: domainId, path: path }).exec();
+        if (pages.length === 0) {
+          return null;
+        }
+        const pagesId = pages[0]._id;
+        const bugs = await BugModel.find({ domainId: domainId, pathId: pagesId }).exec();
+
+        const filteredBugs = bugs.map(bug => ({
+            xpath: bug.xpath,
+            taskId: bug.taskId,
+            taskKey: bug.taskKey, 
+            summary: bug.summary,
+            environment: bug.environment
+          }));
+
+        return filteredBugs;
+      }
+      
+
+      
+
+      
 }
 
 module.exports = new BugService()
